@@ -4,7 +4,7 @@ project(cache)
 
 set (CMAKE_CXX_STANDARD 11)
 
-add_executable(${PROJECT_NAME} main.cpp)
+add_executable(${PROJECT_NAME} cache.cpp)
 
 find_package(TBB)
 
