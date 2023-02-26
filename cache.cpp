@@ -4,12 +4,16 @@
 #include "oneapi/tbb/blocked_range.h"
 #include "oneapi/tbb/parallel_for.h"
 #include <string>
+#include <mutex>
 
 /* This cache is implemented by using tbb concurrent hash map and doubly linked list
 with <string,<string, pointer>> as keys and values
 */
 
+//randomly setting this as 20
 static int CAPACITY = 20;
+std::mutex mtx;
+static bool evicting;
 
 typedef std::string Key;
 typedef std::string Val;
@@ -26,6 +30,32 @@ typedef struct list{
     int size; 
 }list;
 
+typedef tbb::concurrent_hash_map<Key, Hval> cacheTable;
+typedef struct cache{
+    cacheTable& cT;
+    list* l;
+}cache;
+
+bool evict(cache* c)
+{
+    if (!evicting)
+    {
+        evicting = true;
+
+        if (c -> l -> size == 0) return false;
+
+        node* last = c -> l -> tail;
+        c -> l -> tail = last -> prev;
+        c -> l -> tail -> next = nullptr;
+        c -> l -> size--;
+
+        c -> cT.erase(last -> key);
+
+        delete(last);
+        return true;
+    }
+}
+
 list* list_new(){
     list* l = (list*)malloc(sizeof(list));
     l -> size = 0;
@@ -33,7 +63,7 @@ list* list_new(){
     l -> tail = nullptr;
     return l;
 }
-node* list_add(list* l, Key key, Val val)
+node* list_add(cache* c, list* l, Key key, Val val)
 {
     node* n = (node*)malloc(sizeof(node));
     n -> next = nullptr;
@@ -53,7 +83,17 @@ node* list_add(list* l, Key key, Val val)
     }else{
         assert(l -> size == CAPACITY);
         // evict the data on the last
-        // delete the pointer in the hashmap
+        mtx.lock();
+        //other threads might already evicted the data
+        if (l -> size >= CAPACITY)
+        {
+            evict(c);
+        }
+        mtx.unlock();
+
+        n -> next = l -> head;
+        l -> head = n;
+        l -> size++;
     }
 
     return n;
@@ -85,11 +125,6 @@ void to_front(list* l, node* n)
   }
 }
 
-typedef tbb::concurrent_hash_map<Key, Hval> cacheTable;
-typedef struct cache{
-    cacheTable& cT;
-    list* l;
-}cache;
 
 cache* cache_new(){
     cache* c = (cache*)malloc(sizeof(cache));
@@ -97,12 +132,12 @@ cache* cache_new(){
     return c;
 }
 
-int cache_insert(cache* c, Key key, Val val)
+bool cache_insert(cache* c, Key key, Val val)
 {
-    node* n = list_add(c -> l, key, val);
+    node* n = list_add(c, c -> l, key, val);
     if(n == nullptr)
     {
-        return -1;
+        return false;
     }
     Hval pair = std::make_pair(val, n);
     cacheTable::value_type val_pair = std::make_pair(key, pair);
@@ -110,10 +145,10 @@ int cache_insert(cache* c, Key key, Val val)
     if(c -> cT.insert(w, val_pair))
     {
         //means success
-        return 0;
+        return true;
     }else{
         //means failure
-        return -1;
+        return false;
     }
 }
 
@@ -123,6 +158,9 @@ bool cache_find(cache* c, Key key, Val& val)
     if (c -> cT.find(const_a, key))
     {
         val = const_a -> second.first;
+        mtx.lock();
+        to_front(c -> l, const_a -> second.second);
+        mtx.unlock();
         return true;
     }else{
         return false;
@@ -130,25 +168,7 @@ bool cache_find(cache* c, Key key, Val& val)
 }
 
 
-
-
-
-
 int main()
 {
-    //test
-    tbb::concurrent_hash_map<std::string, std::string> ct;
-    tbb::concurrent_hash_map<std::string, std::string>::accessor a;
-    tbb::concurrent_hash_map<std::string, std::string>::const_accessor c;
-    std::pair<std::string, std::string> p = std::make_pair("1", "that is it");
-    ct.insert(a, p);
-    // ct.find(a, "1");
-    std::pair<std::string, std::string> another = std::make_pair("3", "4");
-    std::cout << a -> second << std::endl;
-    ct.find(c, "3");
-    ct.insert(c, "5");
-    std::cout << c -> first + "empty" << std::endl;
-
-    // std::cout << a -> second;
     return 0;
 }
