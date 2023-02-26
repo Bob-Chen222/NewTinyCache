@@ -36,6 +36,7 @@ typedef struct cache{
     list* l;
 }cache;
 
+//evict data if there are more data than the cache can hold
 bool evict(cache* c)
 {
     if (!evicting)
