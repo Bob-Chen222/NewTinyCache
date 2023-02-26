@@ -20,15 +20,11 @@ typedef struct node{
     Val val;
 }node;
 typedef std::pair<std::string, node*> Hval;
-
-
-
 typedef struct list{
     node* head;
     node* tail;
     int size; 
 }list;
-
 
 list* list_new(){
     list* l = (list*)malloc(sizeof(list));
@@ -37,7 +33,6 @@ list* list_new(){
     l -> tail = nullptr;
     return l;
 }
-
 node* list_add(list* l, Key key, Val val)
 {
     node* n = (node*)malloc(sizeof(node));
@@ -64,6 +59,32 @@ node* list_add(list* l, Key key, Val val)
     return n;
 }
 
+void to_front(list* l, node* n)
+{
+  if(l -> size == 1){
+    return;
+  }else if (l -> tail == n){
+    l -> tail = n -> prev;
+    l -> tail -> next = nullptr;
+
+    n -> prev = nullptr;
+    n -> next = l -> head;
+
+    l -> head = n;
+    return;
+  }else if (l -> head == n){
+    return;
+  }else{
+    n -> prev -> next = n -> next;
+    n -> next -> prev = n -> prev;
+
+    n -> prev = nullptr;
+    n -> next = l -> head;
+
+    l -> head = n;
+  }
+}
+
 typedef tbb::concurrent_hash_map<Key, Hval> cacheTable;
 typedef struct cache{
     cacheTable& cT;
@@ -79,15 +100,33 @@ cache* cache_new(){
 int cache_insert(cache* c, Key key, Val val)
 {
     node* n = list_add(c -> l, key, val);
+    if(n == nullptr)
+    {
+        return -1;
+    }
     Hval pair = std::make_pair(val, n);
     cacheTable::value_type val_pair = std::make_pair(key, pair);
-    cacheTable::accessor a;
-    c ->cT.insert(a, val_pair);
+    cacheTable::accessor w;
+    if(c -> cT.insert(w, val_pair))
+    {
+        //means success
+        return 0;
+    }else{
+        //means failure
+        return -1;
+    }
 }
 
-Val cache_find(cache* c, Key key)
+bool cache_find(cache* c, Key key, Val& val)
 {
-    
+    cacheTable::const_accessor const_a;
+    if (c -> cT.find(const_a, key))
+    {
+        val = const_a -> second.first;
+        return true;
+    }else{
+        return false;
+    }
 }
 
 
@@ -97,5 +136,19 @@ Val cache_find(cache* c, Key key)
 
 int main()
 {
+    //test
+    tbb::concurrent_hash_map<std::string, std::string> ct;
+    tbb::concurrent_hash_map<std::string, std::string>::accessor a;
+    tbb::concurrent_hash_map<std::string, std::string>::const_accessor c;
+    std::pair<std::string, std::string> p = std::make_pair("1", "that is it");
+    ct.insert(a, p);
+    // ct.find(a, "1");
+    std::pair<std::string, std::string> another = std::make_pair("3", "4");
+    std::cout << a -> second << std::endl;
+    ct.find(c, "3");
+    ct.insert(c, "5");
+    std::cout << c -> first + "empty" << std::endl;
+
+    // std::cout << a -> second;
     return 0;
 }
