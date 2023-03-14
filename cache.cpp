@@ -10,10 +10,11 @@
 with <string,<string, pointer>> as keys and values
 */
 
-//randomly setting this as 20
-static int CAPACITY = 20;
+/*global variables need to be maintained*/
+
+//72 since threads are no more than 72
+static int CAPACITY = 72;
 std::mutex mtx;
-static bool evicting;
 
 typedef std::string Key;
 typedef std::string Val;
@@ -39,22 +40,22 @@ typedef struct cache{
 //evict data if there are more data than the cache can hold
 bool evict(cache* c)
 {
-    if (!evicting)
+    assert(c != nullptr);
+    if (c -> l -> size == 0) 
     {
-        evicting = true;
-
-        if (c -> l -> size == 0) return false;
-
-        node* last = c -> l -> tail;
-        c -> l -> tail = last -> prev;
-        c -> l -> tail -> next = nullptr;
-        c -> l -> size--;
-
-        c -> cT.erase(last -> key);
-
-        delete(last);
         return true;
     }
+
+    node* last = c -> l -> tail;
+    c -> l -> tail = last -> prev;
+    c -> l -> tail -> next = nullptr;
+    c -> l -> size--;
+
+    c -> cT.erase(last -> key);
+
+    delete(last);
+
+    return true;
 }
 
 list* list_new(){
@@ -62,11 +63,19 @@ list* list_new(){
     l -> size = 0;
     l -> head = nullptr;
     l -> tail = nullptr;
+    assert(l != nullptr);
     return l;
 }
 node* list_add(cache* c, list* l, Key key, Val val)
 {
+    assert(c != nullptr);
+    assert(l != nullptr);
     node* n = (node*)malloc(sizeof(node));
+    if (n == nullptr)
+    {
+        //in case malloc failed
+        return nullptr;
+    }
     n -> next = nullptr;
     n -> prev = nullptr;
     n -> val = val;
@@ -85,10 +94,9 @@ node* list_add(cache* c, list* l, Key key, Val val)
         assert(l -> size == CAPACITY);
         // evict the data on the last
         mtx.lock();
-        //other threads might already evicted the data
-        if (l -> size >= CAPACITY)
-        {
-            evict(c);
+        if (!evict(c)){
+            mtx.unlock();
+            return false;
         }
         mtx.unlock();
 
@@ -102,6 +110,8 @@ node* list_add(cache* c, list* l, Key key, Val val)
 
 void to_front(list* l, node* n)
 {
+    assert(l != nullptr);
+    assert(n != nullptr);
   if(l -> size == 1){
     return;
   }else if (l -> tail == n){
@@ -130,11 +140,13 @@ void to_front(list* l, node* n)
 cache* cache_new(){
     cache* c = (cache*)malloc(sizeof(cache));
     c -> l = list_new();
+    aseert(c != nullptr);
     return c;
 }
 
 bool cache_insert(cache* c, Key key, Val val)
 {
+    assert(c != nullptr);
     node* n = list_add(c, c -> l, key, val);
     if(n == nullptr)
     {
@@ -155,6 +167,7 @@ bool cache_insert(cache* c, Key key, Val val)
 
 bool cache_find(cache* c, Key key, Val& val)
 {
+    assert(c != nullptr);
     cacheTable::const_accessor const_a;
     if (c -> cT.find(const_a, key))
     {
